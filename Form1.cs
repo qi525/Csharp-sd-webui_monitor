@@ -28,9 +28,6 @@ public class Form1 : Form
     private Label? lblGpuCopy;
     private ProgressBar? pbGpuCopy;
 
-    private Label? lblGpu3D;
-    private ProgressBar? pbGpu3D;
-
     private Label? lblVramStatus; // 显存状态
     
     // 网络速度
