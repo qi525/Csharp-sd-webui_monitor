@@ -1,6 +1,9 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Diagnostics;
+using System.IO;
+using System.Threading.Tasks;
 using CSharpSdWebuiMonitor;
 
 public class Form1 : Form
@@ -8,6 +11,12 @@ public class Form1 : Form
     private PerformanceCollector _collector = null!;
     private System.Windows.Forms.Timer _updateTimer = null!;
     private MonitorData _currentData = null!;
+    
+    // 音频播放和警报
+    private AudioPlayer? _audioPlayer;
+    private bool _isAlarmPlaying = false;
+    private System.Windows.Forms.Timer? _alarmTimer;
+    private const string ALARM_FILE_PATH = @"C:\个人数据\C#Code\C#sd-webui_monitor\7 you.wav"; // 用户需要配置此路径
 
     // UI 控件
     private Label? lblCurrentTime;
@@ -176,7 +185,80 @@ public class Form1 : Form
         // 异步调用数据收集，避免阻塞 UI 线程，但 WinForms 的 Timer 默认在 UI 线程运行，
         // 为了演示简洁，此处直接同步调用，如果数据收集耗时，应改用 Task.Run()
         _currentData = _collector.CollectData();
+        
+        // 【新增】检查 WebUI 文件数量是否在30秒内有增加
+        bool isWebUIIncreasing = _collector.CheckWebUIFileIncrease();
+        _currentData.IsWebuiAlertTriggered = !isWebUIIncreasing;
+        
+        // 【新增】触发警报逻辑
+        if (!isWebUIIncreasing)
+        {
+            TriggerWebUIAlarm();
+        }
+        else
+        {
+            StopWebUIAlarm();
+        }
+        
+        // 【新增】获取 Python 进程信息
+        _currentData.PythonProcessInfo = _collector.GetPythonProcessInfo();
+        
         UpdateUI(_currentData);
+    }
+
+    /// <summary>
+    /// 触发 WebUI 警报 - 30秒内文件数未增加
+    /// </summary>
+    private void TriggerWebUIAlarm()
+    {
+        if (_isAlarmPlaying)
+            return; // 已在播放
+
+        _isAlarmPlaying = true;
+        
+        // 在后台线程播放音频，避免阻塞 UI
+        Task.Run(() =>
+        {
+            try
+            {
+                if (_audioPlayer == null && File.Exists(ALARM_FILE_PATH))
+                {
+                    _audioPlayer = new AudioPlayer(ALARM_FILE_PATH);
+                }
+
+                if (_audioPlayer != null)
+                {
+                    _audioPlayer.PlayAlarmAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"播放警报音失败: {ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>
+    /// 停止 WebUI 警报
+    /// </summary>
+    private void StopWebUIAlarm()
+    {
+        if (!_isAlarmPlaying)
+            return;
+
+        _isAlarmPlaying = false;
+        
+        try
+        {
+            if (_audioPlayer != null)
+            {
+                _audioPlayer.Stop();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"停止警报音失败: {ex.Message}");
+        }
     }
 
     // 根据收集到的数据更新所有 UI 控件

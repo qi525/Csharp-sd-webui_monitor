@@ -14,13 +14,38 @@ namespace CSharpSdWebuiMonitor
         private PerformanceCounter? committedBytesCounter;
         private PerformanceCounter? commitLimitCounter;
         
-        // 注意: WinForms 的 ProgressBar 最大值是 Int32.MaxValue (2147483647)
+        // WebUI 文件监控相关
         private const string BASE_OUTPUT_PATH = @"C:\stable-diffusion-webui\outputs\txt2img-images";
         private const long ONE_GB = 1024L * 1024L * 1024L;
+        
+        // WebUI 文件检查参数
+        private int _lastFileCount = -1;
+        private DateTime _lastFileCheckTime = DateTime.Now;
+        private int _consecutiveNoIncreaseCount = 0;
+        private const int FILE_CHECK_INTERVAL_SECONDS = 15; // 改为15秒检查一次
+        private const int NO_INCREASE_THRESHOLD = 2; // 连续2次不增加则警报（即30秒内无增加）
+        
+        // Python 进程监控
+        private ProcessMonitor? _pythonMonitor;
+        private const string PYTHON_EXE_PATH = @"C:\stable-diffusion-webui\venv\python.exe";
 
         public PerformanceCollector()
         {
             InitializeCounters();
+            InitializePythonMonitor();
+        }
+
+        // 初始化 Python 进程监控
+        private void InitializePythonMonitor()
+        {
+            try
+            {
+                _pythonMonitor = new ProcessMonitor(PYTHON_EXE_PATH);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Python 进程监控初始化失败: {ex.Message}");
+            }
         }
 
         // 初始化性能计数器
@@ -52,6 +77,98 @@ namespace CSharpSdWebuiMonitor
         {
             string today = DateTime.Now.ToString("yyyy-MM-dd");
             return Path.Combine(BASE_OUTPUT_PATH, today);
+        }
+
+        // 【新增】检查 WebUI 文件数量是否在30秒内有增加
+        public bool CheckWebUIFileIncrease()
+        {
+            DateTime now = DateTime.Now;
+            
+            // 检查是否到达检查间隔
+            if ((now - _lastFileCheckTime).TotalSeconds < FILE_CHECK_INTERVAL_SECONDS)
+            {
+                return true; // 还未到检查时间，暂不判断
+            }
+
+            try
+            {
+                string monitorPath = GetDailyMonitorPath();
+                int currentFileCount = 0;
+
+                if (Directory.Exists(monitorPath))
+                {
+                    currentFileCount = Directory.GetFiles(monitorPath, "*.*", SearchOption.TopDirectoryOnly).Length;
+                }
+
+                // 首次检查或文件数有增加
+                if (_lastFileCount == -1)
+                {
+                    _lastFileCount = currentFileCount;
+                    _lastFileCheckTime = now;
+                    _consecutiveNoIncreaseCount = 0;
+                    return true;
+                }
+
+                // 比较文件数是否有增加
+                if (currentFileCount > _lastFileCount)
+                {
+                    // 文件数增加，重置计数器
+                    _lastFileCount = currentFileCount;
+                    _lastFileCheckTime = now;
+                    _consecutiveNoIncreaseCount = 0;
+                    return true;
+                }
+                else
+                {
+                    // 文件数未增加，计数器加1
+                    _consecutiveNoIncreaseCount++;
+                    _lastFileCheckTime = now;
+
+                    // 连续2次检查（30秒）内文件数未增加，触发警报
+                    if (_consecutiveNoIncreaseCount >= NO_INCREASE_THRESHOLD)
+                    {
+                        return false; // 触发警报
+                    }
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"WebUI 文件检查失败: {ex.Message}");
+                _lastFileCheckTime = now;
+                return true; // 异常时不触发警报
+            }
+        }
+
+        // 【新增】获取 WebUI 文件监控状态
+        public string GetWebUIMonitorStatus()
+        {
+            try
+            {
+                string monitorPath = GetDailyMonitorPath();
+                int fileCount = 0;
+
+                if (Directory.Exists(monitorPath))
+                {
+                    fileCount = Directory.GetFiles(monitorPath, "*.*", SearchOption.TopDirectoryOnly).Length;
+                }
+
+                return $"WebUI 文件数: {fileCount} (连续无增加: {_consecutiveNoIncreaseCount}/{NO_INCREASE_THRESHOLD})";
+            }
+            catch
+            {
+                return "WebUI 文件监控异常";
+            }
+        }
+
+        // 【新增】获取 Python 进程信息
+        public string GetPythonProcessInfo()
+        {
+            if (_pythonMonitor != null)
+            {
+                return _pythonMonitor.GetProcessInfo();
+            }
+            return "Python 进程监控未初始化";
         }
 
         // 核心方法：收集所有数据并返回 MonitorData 对象

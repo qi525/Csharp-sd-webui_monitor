@@ -38,8 +38,12 @@ namespace CSharpSdWebuiMonitor
         public string WebuiStatus { get; set; } = "";
         public int GeneratedFileCount { get; set; }
         public string MonitorPath { get; set; } = "";
+        public bool IsWebuiAlertTriggered { get; set; } = false; // WebUI 文件数未增加警报标志
 
-        // --- 7. 统计数据 ---
+        // --- 7. Python 进程监控 ---
+        public string PythonProcessInfo { get; set; } = ""; // Python 进程信息
+
+        // --- 8. 统计数据 ---
         public int TotalCount { get; set; } = 17171; // 模拟值
         public int NormalCount { get; set; } = 17009; // 模拟值
         public int AlertCount { get; set; } = 3; // 模拟值
